@@ -1,0 +1,60 @@
+* we might possibly understand the kv layers by looking here:
+static void llama_kv_cache_defrag_internal(struct llama_context & lctx) {
+
+
+* this is right after the prompt is loaded. We can find the later KV layers
+* here and create a vector to lookup in the RAG database.
+* Then add thoughts to the prompt and continue in the loop above.
+* We can also use this same vector to save the the prompt data, including the user
+* input.  
+       if ((int) embd_inp.size() <= n_consumed && !is_interacting) {
+
+*** As far as what to place in thoughts? That can be configurable.
+
+**** this is where the model is loaded, in main.cpp
+    // load the model and apply lora adapter, if any
+    LOG_INF("%s: load the model and apply lora adapter, if any\n", __func__);
+    common_init_result llama_init = common_init_from_params(params);
+
+**ggml vectors have operations associated with them, which are stored in the ggml_tensor struct, in ggml.h:
+
+   enum ggml_op {
+        GGML_OP_NONE = 0,
+
+        GGML_OP_DUP,
+        GGML_OP_ADD,
+        GGML_OP_ADD1,
+        GGML_OP_ACC,
+ 
+
+ *** loads the gguf vectors in, which has all the ops and everything. We'd need to insert our crap in the model before running it 
+     in order to do anything. llama.cpp:4333
+     llama_model_loader(const std::string & fname, bool use_mmap, bool check_tensors, const struct llama_model_kv_override * param_overrides_p) {
+
+*** actual loading of the vectors ggml.c:7318
+    // read the tensor infos
+    if (ctx->header.n_tensors > 0) {
+        ctx->infos = calloc(ctx->header.n_tensors, sizeof(struct gguf_tensor_info));
+ 
+-- model.ctxs what is it?
+
+202	    model = llama_init.model;
+ *** it appears that the model is loaded with tensors with zero ops. This would make sense because I 
+ dont see it in the gguf format
+ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
+
+ https://huggingface.co/blog/introduction-to-ggml
+
+ *** after every decode (prompt and then every token in output), it calls:
+ 10625	    struct ggml_cgraph * build_llama() {
+
+
+
+static struct ggml_cgraph * llama_build_graph(
+*** this contains a function called cb() which is run for every tensor created in the tensor graph
+    we'd probably want to put our hook here.
+
+
+llama_decode_internal
+17496	            float * logits_out = lctx.logits + n_outputs_prev*n_vocab;
+*** so something is setting the lctx.logits

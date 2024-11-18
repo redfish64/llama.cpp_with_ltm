@@ -6,7 +6,6 @@
 #include <Eigen/Dense>
 #include <memory>
 
-
 enum class ReductionMethod {
     RANDOM_PROJECTION,
     PCA

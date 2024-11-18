@@ -9,6 +9,9 @@ endif()
 # libraries
 #
 
+# Find Eigen (add this at the top of the library section)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+
 # llama
 
 add_library(llama
@@ -17,6 +20,7 @@ add_library(llama
             llama-vocab.cpp
             llama-grammar.cpp
             llama-sampling.cpp
+            up_ltm.cpp
             unicode.h
             unicode.cpp
             unicode-data.cpp
@@ -25,7 +29,11 @@ add_library(llama
 target_include_directories(llama PUBLIC . ../include)
 target_compile_features   (llama PUBLIC cxx_std_11) # don't bump
 
-target_link_libraries(llama PUBLIC ggml)
+target_link_libraries(llama 
+    PUBLIC 
+        ggml
+        Eigen3::Eigen
+)
 
 if (BUILD_SHARED_LIBS)
     set_target_properties(llama PROPERTIES POSITION_INDEPENDENT_CODE ON)

@@ -57,4 +57,23 @@ static struct ggml_cgraph * llama_build_graph(
 
 llama_decode_internal
 17496	            float * logits_out = lctx.logits + n_outputs_prev*n_vocab;
-*** so something is setting the lctx.logits
+*** so something is setting the lctx.logits'
+
+
+*** ggml
+everytime in examples, uses two contexts, a ggml_context for the input, and another ggml_context for the graph.
+llama.cpp also does this: struct ggml_context * ctx0 = nullptr;
+
+
+When llama.cpp creates a graph it uses:     
+struct ggml_cgraph * gf = ggml_new_graph_custom(ctx0, llama_model_max_nodes(model), false);
+
+This is just like ggml_new_graph but changes the size of the context from the default. I imagine this 
+expands if too small or something like that. (it sets it to max(8192,5*nodes))
+
+*** output
+we're creating an offshoot from the main result. I haven't seen anything yet that does this
+
+** cb is only called when making the graph, not when executing, so there is no data
+which means we have to finish making the graph, and somehow have 2 outputs, not just one result
+Verified this is possible. Just call llama_build_graph twice

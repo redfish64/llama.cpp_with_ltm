@@ -6,6 +6,7 @@
 #include <Eigen/Dense>
 #include <memory>
 
+#ifdef DOOMSDAY
 enum class ReductionMethod {
     RANDOM_PROJECTION,
     PCA
@@ -270,3 +271,5 @@ void example_usage() {
     // Search for similar memories
     std::vector<std::pair<int, float>> similar_memories = memory_manager.search(layer_output, 5);
 }
+
+#endif

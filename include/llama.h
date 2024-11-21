@@ -810,6 +810,12 @@ extern "C" {
             struct llama_context * ctx,
               struct llama_batch   batch);
 
+    // Like llama_decode, but extracts an output layer
+    LLAMA_API int32_t llama_decode_extract(
+                    struct llama_context * ctx,
+                      struct llama_batch   batch,
+                                 int32_t   timhack_extract_layer_output);
+
     // Set the number of threads used for decoding
     // n_threads is the number of threads used for generation (single token)
     // n_threads_batch is the number of threads used for prompt and batch processing (multiple tokens)

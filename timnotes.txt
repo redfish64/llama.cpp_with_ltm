@@ -77,3 +77,37 @@ we're creating an offshoot from the main result. I haven't seen anything yet tha
 ** cb is only called when making the graph, not when executing, so there is no data
 which means we have to finish making the graph, and somehow have 2 outputs, not just one result
 Verified this is possible. Just call llama_build_graph twice
+
+** claude generated code has a lot of mistakes
+
+I want to get it running quickly, so I think I just need to update llama.cpp to create a new result
+
+** I think I'm going to skip vector dim reduction for now
+
+First, because I don't know if it would help. Second because thats something that can be experimented with
+later. I was thinking of just splitting the vector into multiple components, but just searching against the
+whole vector would in effect do this anyway.
+
+So we'll see. The main point is that keeping all the data would be best, at first. We can always update
+the vector db later.
+
+** res and emb are outputs and created in llama_build_graph
+
+        ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false);
+
+        // the output is always the last tensor in the graph
+        struct ggml_tensor * res  = ggml_graph_node(gf, -1);
+        struct ggml_tensor * embd = ggml_graph_node(gf, -2);
+
+ ** The question is, how do we make sure not to disturb the kv cache among other things 
+ when we make our own llama_build_graph for the upper layers.
+
+ According to claude, kv cache uses a separate graph, so it won't interfere
+
+ To get the graph to store the output, we need to run:
+ ggml_build_forward_expand
+
+ ** to get the tensor value out, call this:
+
+         void (*get_tensor_async)(ggml_backend_t backend, const struct ggml_tensor * tensor,       void * data, size_t offset, size_t size);
+    I don't know when it syncs??? or how. Maybe automatic???

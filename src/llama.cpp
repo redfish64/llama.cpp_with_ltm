@@ -3274,6 +3274,10 @@ struct llama_context {
     size_t  logits_size = 0; // capacity (of floats) for logits
     float * logits      = nullptr;
 
+    // if llama_decode_extract is called, the result of the extraction is placed here
+    size_t  timhack_extracted_layer_output_size = 0; // capacity (of floats) for timhack_extracted_layer_output
+    float * timhack_extracted_layer_output      = nullptr;
+
     std::vector<int32_t> output_ids; // map batch token positions to ids of the logits and embd buffers
     size_t  output_size = 0; // capacity (of tokens positions) for the output buffers
     int32_t n_outputs   = 0; // number of actually-used outputs in the current ubatch or last logical batch
@@ -10240,6 +10244,7 @@ struct llm_build_context {
     const int32_t n_outputs_enc;
     const int32_t kv_head;  // index of where we store new KV data in the cache
     const int32_t n_ctx_orig;
+    const int32_t timhack_layer_to_extract;
 
     const bool flash_attn;
 
@@ -10257,7 +10262,8 @@ struct llm_build_context {
         llama_context  & lctx,
     const llama_ubatch & ubatch,
     const llm_build_cb & cb,
-                  bool   worst_case) :
+                  bool   worst_case,
+                 int32_t timhack_layer_to_extract) :
         model            (lctx.model),
         lctx             (lctx),
         hparams          (model.hparams),
@@ -10290,6 +10296,7 @@ struct llm_build_context {
         n_outputs_enc    (worst_case ? n_tokens : lctx.embd_enc.size() / hparams.n_embd),
         kv_head          (worst_case ? (kv_self.recurrent ? 0 : kv_self.size - n_tokens) : kv_self.head),
         n_ctx_orig       (cparams.n_ctx_orig_yarn),
+        timhack_layer_to_extract (timhack_layer_to_extract),
         flash_attn       (cparams.flash_attn),
         pooling_type     (cparams.pooling_type),
         rope_type        (hparams.rope_type),
@@ -10762,6 +10769,15 @@ struct llm_build_context {
                         false, 0.0,
                         cb, il);
                 cb(cur, "ffn_moe_out", il);
+            }
+
+            //timhack
+            //trying to get the right output for storing in faiss
+            if (il == timhack_layer_to_extract) {
+                ggml_build_forward_expand(gf,cur);
+
+                // ggml_build_forward_expand(gf, ggml_cpy(ctx0, cur, k_cache_view)cur);
+                // ggml_build_forward_expand(graph, ggml_cpy(ctx, k_cur, k_cache_view));
             }
 
             // For Granite architecture
@@ -16427,7 +16443,7 @@ static struct ggml_cgraph * llama_build_graph_defrag(llama_context & lctx, const
 
     llm_build_cb cb = [&](struct ggml_tensor * , const char * , int ) { };
 
-    struct llm_build_context llm(lctx, dummy, cb, false);
+    struct llm_build_context llm(lctx, dummy, cb, false, -1);
 
     llm.init();
 
@@ -16444,7 +16460,7 @@ static struct ggml_cgraph * llama_build_graph_k_shift(llama_context & lctx) {
 
     llm_build_cb cb = [&](struct ggml_tensor * , const char * , int ) { };
 
-    struct llm_build_context llm(lctx, dummy, cb, false);
+    struct llm_build_context llm(lctx, dummy, cb, false, -1);
 
     llm.init();
 
@@ -16458,7 +16474,8 @@ static struct ggml_cgraph * llama_build_graph_k_shift(llama_context & lctx) {
 static struct ggml_cgraph * llama_build_graph(
          llama_context & lctx,
     const llama_ubatch & ubatch,
-                  bool   worst_case) {
+                  bool   worst_case,
+                 int32_t timhack_layer_to_extract) {
     const auto & model = lctx.model;
 
     // this callback allows us to apply custom logic to each tensor (e.g. ggml-alloc, offloading, etc.)
@@ -16495,7 +16512,7 @@ static struct ggml_cgraph * llama_build_graph(
 
     struct ggml_cgraph * result = NULL;
 
-    struct llm_build_context llm(lctx, ubatch, cb, worst_case);
+    struct llm_build_context llm(lctx, ubatch, cb, worst_case, timhack_layer_to_extract);
 
     llm.init();
 
@@ -17299,7 +17316,8 @@ static enum ggml_status llama_graph_compute(
 //
 static int llama_decode_internal(
          llama_context & lctx,
-           llama_batch   inp_batch) {
+           llama_batch   inp_batch,
+               int32_t   timhack_extract_layer_output) {
 
     lctx.is_encoding = false;
 
@@ -17444,11 +17462,25 @@ static int llama_decode_internal(
         ggml_backend_sched_reset(lctx.sched.get());
         ggml_backend_sched_set_eval_callback(lctx.sched.get(), lctx.cparams.cb_eval, lctx.cparams.cb_eval_user_data);
 
-        ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false);
+        ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false, timhack_extract_layer_output);
 
+        //TODO 1 we got to only extract the entry from the batch
         // the output is always the last tensor in the graph
-        struct ggml_tensor * res  = ggml_graph_node(gf, -1);
-        struct ggml_tensor * embd = ggml_graph_node(gf, -2);
+        struct ggml_tensor * res;
+        struct ggml_tensor * embd;
+        struct ggml_tensor * timhack_extracted_layer_output;
+        
+        if (timhack_extract_layer_output >=0 && timhack_extract_layer_output < llama_n_layer(&lctx.model))
+        {
+            res = ggml_graph_node(gf, -1);
+            embd = ggml_graph_node(gf, -2);
+            timhack_extracted_layer_output = ggml_graph_node(gf, -3);
+        }
+        else {
+            res = ggml_graph_node(gf, -1);
+            embd = ggml_graph_node(gf, -2);
+            timhack_extracted_layer_output = nullptr;
+        }
 
         if (lctx.n_outputs == 0) {
             // no output
@@ -17516,6 +17548,28 @@ static int llama_decode_internal(
                 GGML_ASSERT( n_outputs_prev + n_outputs_new <= n_outputs);
                 GGML_ASSERT((n_outputs_prev + n_outputs_new)*n_vocab <= (int64_t) lctx.logits_size);
                 ggml_backend_tensor_get_async(backend_res, res, logits_out, 0, n_outputs_new*n_vocab*sizeof(float));
+            }
+        }
+
+        // extract timhack_extracted_layer_output 
+        if (timhack_extracted_layer_output) {
+            ggml_backend_t backend_th = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), res);
+            GGML_ASSERT(backend_th != nullptr);
+            GGML_ASSERT(lctx.timhack_extracted_layer_output != nullptr);
+
+            //TODO 4 we're going to ignore batches for now (which means not pay attention to n_outputs_prev)
+            //because we're really only interested in a single token right now. So we just copy over
+            //and over again the same place
+            float * th_out = lctx.timhack_extracted_layer_output;
+            const int32_t n_outputs_new = lctx.n_outputs;
+
+            const int32_t n_ctx = llama_n_ctx(&lctx);
+
+            if (n_outputs_new) {
+                GGML_ASSERT( n_outputs_new <= n_outputs);
+                GGML_ASSERT( n_outputs_new * n_ctx == (int64_t) lctx.timhack_extracted_layer_output_size);
+                GGML_ASSERT( ggml_nelements(timhack_extracted_layer_output) == n_outputs_new * n_ctx);
+                ggml_backend_tensor_get_async(backend_th, timhack_extracted_layer_output, th_out, 0, n_outputs_new*n_ctx*sizeof(float));
             }
         }
 
@@ -17697,7 +17751,7 @@ static int llama_encode_internal(
     ggml_backend_sched_reset(lctx.sched.get());
     ggml_backend_sched_set_eval_callback(lctx.sched.get(), lctx.cparams.cb_eval, lctx.cparams.cb_eval_user_data);
 
-    ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false);
+    ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false, -1);
 
     // the output embeddings after the final encoder normalization
     struct ggml_tensor * embd = nullptr;
@@ -18082,7 +18136,7 @@ static void llama_kv_cache_update_internal(struct llama_context & lctx) {
         uint32_t n_tokens = std::min(lctx.cparams.n_ctx, lctx.cparams.n_ubatch);
         llama_token token = llama_token_bos(&lctx.model); // not actually used by llama_build_graph, but required to choose between token and embedding inputs graph
         llama_ubatch ubatch = { true, n_tokens, n_tokens / n_seqs, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr};
-        ggml_cgraph * gf = llama_build_graph(lctx, ubatch, true);
+        ggml_cgraph * gf = llama_build_graph(lctx, ubatch, true, -1);
 
         // initialize scheduler with the worst-case graph
         ggml_backend_sched_reset(lctx.sched.get());
@@ -19746,7 +19800,7 @@ struct llama_context * llama_new_context_with_model(
             llama_token token = llama_token_bos(&ctx->model); // not actually used by llama_build_graph, but required to choose between token and embedding inputs graph
 
             llama_ubatch ubatch_pp = { true, n_tokens, n_tokens / n_seqs, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr};
-            ggml_cgraph * gf_pp = llama_build_graph(*ctx, ubatch_pp, true);
+            ggml_cgraph * gf_pp = llama_build_graph(*ctx, ubatch_pp, true, -1);
 
             // reserve pp graph first so that buffers are only allocated once
             ggml_backend_sched_reserve(ctx->sched.get(), gf_pp);
@@ -19755,13 +19809,13 @@ struct llama_context * llama_new_context_with_model(
 
             // reserve with tg graph to get the number of splits and nodes
             llama_ubatch ubatch_tg = { true, 1, 1, n_seqs, &token, nullptr, nullptr, nullptr, nullptr, nullptr};
-            ggml_cgraph * gf_tg = llama_build_graph(*ctx, ubatch_tg, true);
+            ggml_cgraph * gf_tg = llama_build_graph(*ctx, ubatch_tg, true, -1);
             ggml_backend_sched_reserve(ctx->sched.get(), gf_tg);
             int n_splits_tg = ggml_backend_sched_get_n_splits(ctx->sched.get());
             int n_nodes_tg = ggml_graph_n_nodes(gf_tg);
 
             // reserve again with pp graph to avoid ggml-alloc reallocations during inference
-            gf_pp = llama_build_graph(*ctx, ubatch_pp, true);
+            gf_pp = llama_build_graph(*ctx, ubatch_pp, true, -1);
             if (!ggml_backend_sched_reserve(ctx->sched.get(), gf_pp)) {
                 LLAMA_LOG_ERROR("%s: failed to allocate compute buffers\n", __func__);
                 llama_free(ctx);
@@ -21347,10 +21401,24 @@ int32_t llama_encode(
     return ret;
 }
 
+
+int32_t llama_decode_extract(
+        struct llama_context * ctx,
+          struct llama_batch   batch,
+                     int32_t   timhack_extract_layer_output) {
+    const int ret = llama_decode_internal(*ctx, batch, timhack_extract_layer_output);
+    if (ret != 0) {
+        LLAMA_LOG_ERROR("%s: failed to decode, ret = %d\n", __func__, ret);
+    }
+
+    return ret;
+}
+
+
 int32_t llama_decode(
         struct llama_context * ctx,
           struct llama_batch   batch) {
-    const int ret = llama_decode_internal(*ctx, batch);
+    const int ret = llama_decode_internal(*ctx, batch, -1);
     if (ret != 0) {
         LLAMA_LOG_ERROR("%s: failed to decode, ret = %d\n", __func__, ret);
     }

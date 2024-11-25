@@ -12,6 +12,9 @@ endif()
 # Find Eigen (add this at the top of the library section)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
+# Find Faiss
+find_package(Faiss REQUIRED)
+
 # llama
 
 add_library(llama
@@ -26,13 +29,14 @@ add_library(llama
             unicode-data.cpp
             )
 
-target_include_directories(llama PUBLIC . ../include)
+target_include_directories(llama PUBLIC . ../include ${FAISS_INCLUDE_DIR})
 target_compile_features   (llama PUBLIC cxx_std_11) # don't bump
 
 target_link_libraries(llama 
     PUBLIC 
         ggml
         Eigen3::Eigen
+        faissfdafdsfs
 )
 
 if (BUILD_SHARED_LIBS)

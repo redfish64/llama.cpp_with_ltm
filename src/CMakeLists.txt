@@ -36,7 +36,7 @@ target_link_libraries(llama
     PUBLIC 
         ggml
         Eigen3::Eigen
-        faissfdafdsfs
+        faiss
 )
 
 if (BUILD_SHARED_LIBS)

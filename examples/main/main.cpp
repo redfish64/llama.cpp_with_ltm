@@ -741,6 +741,21 @@ int main(int argc, char ** argv) {
             if (llama_token_is_eog(model, common_sampler_last(smpl))) {
                 LOG_DBG("found an EOG token\n");
 
+                if(embd.size() > 0) {
+                    GGML_ASSERT(llama_n_layer(model) > 2);
+
+                    if (llama_decode_extract(ctx, llama_batch_get_one(&embd[embd.size()-1], 1),llama_n_layer(model) - 2)) { 
+                        LOG_ERR("%s : failed to eval\n", __func__);
+                        return 1;
+                    }
+
+                    LOG_INF("done decode_extract\n");
+
+                    //TODO 3: It might be better to record the history at the end of the user input. Then the model is in the same
+                    //state that it would be in when it wants to create a response and know the context
+                }
+
+
                 if (params.interactive) {
                     if (!params.antiprompt.empty()) {
                         // tokenize and inject first reverse prompt

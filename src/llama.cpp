@@ -17167,7 +17167,7 @@ static void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) 
 
 // Make sure enough space is available for outputs.
 // Returns max number of outputs for which space was reserved.
-static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs) {
+static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs, bool is_timhack_extract_layer_output) {
     const auto & cparams = lctx.cparams;
     const auto & hparams = lctx.model.hparams;
 
@@ -17183,6 +17183,7 @@ static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs) {
 
     const size_t logits_size = has_logits ? n_vocab*n_outputs_max : 0;
     const size_t embd_size   = has_embd   ?  n_embd*n_outputs_max : 0;
+    const size_t timhack_extracted_upper_layer_size = is_timhack_extract_layer_output ? n_embd : 0;
 
     if (lctx.output_ids.empty()) {
         // init, never resized afterwards
@@ -17190,7 +17191,7 @@ static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs) {
     }
 
     const size_t prev_size = lctx.buf_output ? ggml_backend_buffer_get_size(lctx.buf_output.get()) : 0;
-    const size_t new_size  = (logits_size + embd_size) * sizeof(float);
+    const size_t new_size  = (logits_size + embd_size + timhack_extracted_upper_layer_size) * sizeof(float);
 
     // alloc only when more than the current capacity is required
     // TODO: also consider shrinking the buffer
@@ -17203,6 +17204,7 @@ static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs) {
             lctx.buf_output = nullptr;
             lctx.logits = nullptr;
             lctx.embd = nullptr;
+            lctx.timhack_extracted_layer_output = nullptr;
         }
 
         auto * buft = ggml_backend_cpu_buffer_type();
@@ -17223,10 +17225,12 @@ static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs) {
 
     lctx.logits = has_logits ? output_base               : nullptr;
     lctx.embd   = has_embd   ? output_base + logits_size : nullptr;
+    lctx.timhack_extracted_layer_output = is_timhack_extract_layer_output ? output_base + logits_size + timhack_extracted_upper_layer_size : nullptr;
 
     lctx.output_size = n_outputs_max;
     lctx.logits_size = logits_size;
     lctx.embd_size   = embd_size;
+    lctx.timhack_extracted_layer_output_size   = timhack_extracted_upper_layer_size;
 
     // set all ids as invalid (negative)
     std::fill(lctx.output_ids.begin(), lctx.output_ids.end(), -1);
@@ -17388,7 +17392,7 @@ static int llama_decode_internal(
         /* logits_all   */ n_outputs == n_tokens_all);
 
     // reserve output buffer
-    if (llama_output_reserve(lctx, n_outputs) < n_outputs) {
+    if (llama_output_reserve(lctx, n_outputs,timhack_extract_layer_output >= 0) < n_outputs) {
         LLAMA_LOG_ERROR("%s: could not reserve space for batch with %u outputs\n", __func__, n_outputs);
         return -2;
     };
@@ -17731,7 +17735,7 @@ static int llama_encode_internal(
     const llama_ubatch ubatch = lctx.sbatch.split_simple(n_tokens);
 
     // reserve output buffer
-    if (llama_output_reserve(lctx, n_tokens) < n_tokens) {
+    if (llama_output_reserve(lctx, n_tokens, false) < n_tokens, false) {
         LLAMA_LOG_ERROR("%s: could not reserve space for batch with %u outputs\n", __func__, n_tokens);
         return -2;
     };
@@ -19727,7 +19731,8 @@ struct llama_context * llama_new_context_with_model(
         // graph outputs buffer
         {
             // resized during inference when a batch uses more outputs
-            if (llama_output_reserve(*ctx, params.n_seq_max) < params.n_seq_max) {
+            //TODO 3 timhack we probably want to make it possible to turn off decode extracting
+            if (llama_output_reserve(*ctx, params.n_seq_max, true) < params.n_seq_max) {
                 LLAMA_LOG_ERROR("%s: failed to reserve initial output buffer\n", __func__);
                 llama_free(ctx);
                 return nullptr;
@@ -20628,7 +20633,7 @@ struct llama_data_read {
         uint32_t n_outputs;
         read_to(&n_outputs, sizeof(n_outputs));
 
-        if (n_outputs > llama_output_reserve(*ctx, n_outputs)) {
+        if (n_outputs > llama_output_reserve(*ctx, n_outputs, false)) {
             throw std::runtime_error("could not reserve outputs");
         }
 

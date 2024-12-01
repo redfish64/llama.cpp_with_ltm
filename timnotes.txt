@@ -111,3 +111,28 @@ the vector db later.
 
          void (*get_tensor_async)(ggml_backend_t backend, const struct ggml_tensor * tensor,       void * data, size_t offset, size_t size);
     I don't know when it syncs??? or how. Maybe automatic???
+
+
+*** static struct ggml_tensor * llm_build_inp_embd(
+
+makes room for the input tokens
+
+I'm thinking of using something else than llama-cli since it assumes a simple append only chat and has a lot of code
+which uses a kv cache and moves around buffers and things. There should be a simpler version that simply generates given a 
+prompt, without a cache I would think.
+
+I tried simple, which loads the whole prompt in everytime. The problem is that its very slow and with a large prompt I'd imagine it 
+would get really slow.
+
+So I think I will insert "Context:" at the current position after the user input. However, we still need to deal with the fact 
+that I am rerunning llama_decode, and does that update the kv cache and screw up everything, I dunno.
+
+Right now I'm doing cpu encoding. Of course I could go to gpu but then there is the space problem, and with a larger context window
+this will be even worse.
+
+So we're going to stick with llama-cli and see how it goes
+
+*** main
+embd
+embd_inp
+kv_cache

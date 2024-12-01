@@ -17571,8 +17571,8 @@ static int llama_decode_internal(
 
             if (n_outputs_new) {
                 GGML_ASSERT( n_outputs_new <= n_outputs);
-                GGML_ASSERT( n_outputs_new * n_ctx == (int64_t) lctx.timhack_extracted_layer_output_size);
-                GGML_ASSERT( ggml_nelements(timhack_extracted_layer_output) == n_outputs_new * n_ctx);
+                GGML_ASSERT( n_outputs_new * n_ctx <= (int64_t) lctx.timhack_extracted_layer_output_size);
+                GGML_ASSERT( ggml_nelements(timhack_extracted_layer_output) >= n_outputs_new * n_ctx);
                 ggml_backend_tensor_get_async(backend_th, timhack_extracted_layer_output, th_out, 0, n_outputs_new*n_ctx*sizeof(float));
             }
         }

@@ -475,6 +475,11 @@ int main(int argc, char ** argv) {
 
     std::vector<llama_token> embd;
 
+    //this keeps track of the current context window available to llama_decode
+    //(this is necessary since a lot of the context is saved in the kv_cache and only new tokens are given to llama_decode
+    // when it is called)
+    std::vector<llama_token> timhack_current_context_window;
+
     // tokenized antiprompts
     std::vector<std::vector<llama_token>> antiprompt_ids;
 
@@ -544,6 +549,12 @@ int main(int argc, char ** argv) {
                     llama_kv_cache_seq_rm (ctx, 0, params.n_keep            , params.n_keep + n_discard);
                     llama_kv_cache_seq_add(ctx, 0, params.n_keep + n_discard, n_past, -n_discard);
 
+                    timhack_current_context_window.erase(
+                        timhack_current_context_window.begin() + params.n_keep,
+                        timhack_current_context_window.begin() + params.n_keep + n_discard
+                    );
+
+
                     n_past -= n_discard;
 
                     LOG_DBG("after swap: n_past = %d\n", n_past);
@@ -612,7 +623,15 @@ int main(int argc, char ** argv) {
                     return 1;
                 }
 
+                timhack_current_context_window.insert(
+                    timhack_current_context_window.end(),
+                    embd.begin() + i,
+                    embd.begin() + i + n_eval
+                );
+
                 n_past += n_eval;
+
+                GGML_ASSERT(timhack_current_context_window.size() == n_past && "context window size mismatch");
 
                 LOG_DBG("n_past = %d\n", n_past);
                 // Display total tokens alongside total time

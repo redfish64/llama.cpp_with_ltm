@@ -18,6 +18,10 @@
 #include <faiss/IndexIVFPQ.h>
 #include <faiss/index_io.h>
 #include <fstream> 
+#include <chrono>
+#include <ctime>
+#include <iostream>
+#include <iomanip>
 
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
 #include <signal.h>
@@ -44,6 +48,76 @@ static std::ostringstream       * g_output_ss;
 static std::vector<llama_token> * g_output_tokens;
 static bool is_interacting  = false;
 static bool need_insert_eot = false;
+
+const std::string kPathSeparator =
+#ifdef _WIN32
+                            "\\";
+#else
+                            "/";
+#endif
+
+struct timhack_ltm_file_header 
+{
+    const int version;
+    const char * model;
+};
+
+struct timhack_ltm_store_entry {
+    const int64_t date_ts;
+    const u_int16_t layer_index; // indexed from the last layer backwards. So if there are 32 layers and this is 2 then it would be layer 30
+    const u_int16_t n_elem; //number of elements in layer
+    const u_int16_t n_data; //number of elements in data
+    const float * layer;
+    const char * data; //PERF we could possibly store tokens, but I really want to be able to run strings on the log files and get a good result
+};
+
+
+static void timhack_write_ltm_layer_data(common_params &params, llama_context *ctx, std::vector<llama_token> current_context_window)
+{
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    std::time_t now_t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_local = *std::localtime(&now_t);
+    std::stringstream ss;
+    ss << std::put_time(&tm_local, "%Y-%m-%d_%H-%M-%S");
+    std::string timestamp = ss.str();
+
+    // Create the filename
+    std::string filename = params.timhack_data_dir+ kPathSeparator + "ltm_" + timestamp + ".bin";
+
+    // Open the file for writing
+    std::ofstream outputFile(filename);
+
+    if (!outputFile.is_open()) {
+        LOG_ERR("unable to open ltm data file for writing: %s\n",filename);
+        return;
+    }
+
+    timhack_ltm_file_header fh =
+        {
+            MAGIC,
+            TIMHACK_LTM_VERSION,
+            params.model.c_str()
+        };
+
+    timhack_ltm_store_entry se = 
+    { 
+        static_cast<uint64_t>(epoch_time);    // const int64_t date_ts;
+    // const u_int16_t layer_index; // indexed from the last layer backwards. So if there are 32 layers and this is 2 then it would be layer 30
+    // const u_int16_t n_elem; //number of elements in layer
+    // const u_int16_t n_data; //number of elements in data
+    // const float * layer;
+    // const char * data; //PERF we could possibly store tokens, but I really want to be able to run strings on the log files and get a good result
+    }
+
+        outputFile << "This is some text for the file." << std::endl;
+    outputFile.close();
+    } else {
+    std::cerr << "Error opening file: " << filename << std::endl;
+    }
+
+    return 0;
+
+}
 
 static void print_usage(int argc, char ** argv) {
     (void) argc;
@@ -95,20 +169,6 @@ static std::string chat_add_and_format(struct llama_model * model, std::vector<c
     return formatted;
 }
 
-struct timhack_ltm_file_header 
-{
-    int version;
-    char * model_filename;
-};
-
-struct timhack_ltm_store_entry {
-    int64_t date_ts;
-    u_int16_t layer_index; // indexed from the last layer backwards. So if there are 32 layers and this is 2 then it would be layer 30
-    u_int16_t n_elem; //number of elements in layer
-    u_int16_t n_data; //number of elements in data
-    float * layer;
-    char * data; //PERF we could possibly store tokens, but I really want to be able to run strings on the log files and get a good result
-};
 
 int main(int argc, char ** argv) {
     common_params params;
@@ -475,7 +535,8 @@ int main(int argc, char ** argv) {
     bool display              = true;
     bool need_to_save_session = !path_session.empty() && n_matching_session_tokens < embd_inp.size();
 
-    //if true, the current context is stored to long term memory (a log file, basically, that will be later read into the vector db)
+    //if true, the current context is stored to long term memory. This is turned on right after the user input is read in chat mode
+    //so that the upper layer status and the context window is stored.
     bool timhack_to_store_context_to_ltm = false;
 
     int n_past             = 0;
@@ -497,6 +558,7 @@ int main(int argc, char ** argv) {
     //this keeps track of the current context window available to llama_decode
     //(this is necessary since a lot of the context is saved in the kv_cache and only new tokens are given to llama_decode
     // when it is called)
+    //PERF: turn this off if the params specify not to store ltm
     std::vector<llama_token> timhack_current_context_window;
 
     // tokenized antiprompts
@@ -637,10 +699,10 @@ int main(int argc, char ** argv) {
 
                 LOG_DBG("eval: %s\n", string_from(ctx, embd).c_str());
 
-                if(timhack_to_store_context_to_ltm) {
-                   GGML_ASSERT(llama_n_layer(model) > 2);
+                if(timhack_to_store_context_to_ltm && params.timhack_layer_to_extract > 0) {
+                   GGML_ASSERT(llama_n_layer(model) > params.timhack_layer_to_extract);
 
-                    if (llama_decode_extract(ctx, llama_batch_get_one(&embd[i], n_eval),llama_n_layer(model) - 2)) { 
+                    if (llama_decode_extract(ctx, llama_batch_get_one(&embd[i], n_eval),llama_n_layer(model) - params.timhack_layer_to_extract)) { 
                         LOG_ERR("%s : failed to eval\n", __func__);
                         return 1;
                     }
@@ -648,7 +710,7 @@ int main(int argc, char ** argv) {
                     LOG_INF("done decode_extract\n");
                     timhack_to_store_context_to_ltm = false;
 
-
+                    write_ltm_layer_data(params,ctx,timhack_current_context_window);
                 }
                 else {
                     if (llama_decode(ctx, llama_batch_get_one(&embd[i], n_eval))) {

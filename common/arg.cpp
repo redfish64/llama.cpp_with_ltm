@@ -2036,6 +2036,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             common_log_set_timestamps(common_log_main(), true);
         }
     ).set_env("LLAMA_LOG_TIMESTAMPS"));
+    add_opt(common_arg(
+        {"--timhack-ltm-layer"}, "N",
+        string_format("The layer in the model to use as an index for long term memory. Indexed from the last layer backwards. So if there are 32 layers and this is 2 then it would be layer 30"),
+        [](common_params & params, int value) {
+            params.timhack_layer_to_extract = value;
+        }
+    ));
+    add_opt(common_arg(
+        {"--timhack-dir"}, "FNAME",
+        "The directory to store ltm data (defaults to 'data')",
+        [](common_params & params, const std::string & value) {
+            params.timhack_data_dir = value;
+        }
+    ));
 
     return ctx_arg;
 }

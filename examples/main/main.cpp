@@ -95,6 +95,21 @@ static std::string chat_add_and_format(struct llama_model * model, std::vector<c
     return formatted;
 }
 
+struct timhack_ltm_file_header 
+{
+    int version;
+    char * model_filename;
+};
+
+struct timhack_ltm_store_entry {
+    int64_t date_ts;
+    u_int16_t layer_index; // indexed from the last layer backwards. So if there are 32 layers and this is 2 then it would be layer 30
+    u_int16_t n_elem; //number of elements in layer
+    u_int16_t n_data; //number of elements in data
+    float * layer;
+    char * data; //PERF we could possibly store tokens, but I really want to be able to run strings on the log files and get a good result
+};
+
 int main(int argc, char ** argv) {
     common_params params;
     g_params = &params;

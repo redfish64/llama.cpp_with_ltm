@@ -355,6 +355,9 @@ struct common_params {
 
     // batched-bench params
     bool batched_bench_output_jsonl = false;
+
+    int timhack_layer_to_extract = 0; //layer to extract and use for 
+    std::string timhack_data_dir  = "data"; 
 };
 
 // call once at the start of a program if it uses libcommon

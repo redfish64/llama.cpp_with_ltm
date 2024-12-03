@@ -136,3 +136,21 @@ So we're going to stick with llama-cli and see how it goes
 embd
 embd_inp
 kv_cache
+
+                if(embd.size() > 0) {
+                    GGML_ASSERT(llama_n_layer(model) > 2);
+
+                    if (llama_decode_extract(ctx, llama_batch_get_one(&embd[embd.size()-1], 1),llama_n_layer(model) - 2)) { 
+                        LOG_ERR("%s : failed to eval\n", __func__);
+                        return 1;
+                    }
+
+                    LOG_INF("done decode_extract\n");
+
+                    //TODO 3: It might be better to record the history at the end of the user input. Then the model is in the same
+                    //state that it would be in when it wants to create a response and know the context
+                }
+
+the current model has 4096 dimensions in the embedding layer.
+There are 32 heads but each head only handles part of the embedding layer.
+So the output of the layer should equal the number of embedding dimensions, regardless of context size.

@@ -588,6 +588,19 @@ ggml-amx/fast:
 .PHONY : ggml-amx/fast
 
 #=============================================================================
+# Target rules for targets named ggml-cuda
+
+# Build rule for target.
+ggml-cuda: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 ggml-cuda
+.PHONY : ggml-cuda
+
+# fast build rule for target.
+ggml-cuda/fast:
+	$(MAKE) $(MAKESILENT) -f ggml/src/ggml-cuda/CMakeFiles/ggml-cuda.dir/build.make ggml/src/ggml-cuda/CMakeFiles/ggml-cuda.dir/build
+.PHONY : ggml-cuda/fast
+
+#=============================================================================
 # Target rules for targets named llama
 
 # Build rule for target.
@@ -1492,6 +1505,7 @@ help:
 	@echo "... ggml-amx"
 	@echo "... ggml-base"
 	@echo "... ggml-cpu"
+	@echo "... ggml-cuda"
 	@echo "... llama"
 	@echo "... llama-batched"
 	@echo "... llama-batched-bench"

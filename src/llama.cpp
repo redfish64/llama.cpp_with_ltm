@@ -17553,29 +17553,25 @@ static int llama_decode_internal(
                 GGML_ASSERT((n_outputs_prev + n_outputs_new)*n_vocab <= (int64_t) lctx.logits_size);
                 ggml_backend_tensor_get_async(backend_res, res, logits_out, 0, n_outputs_new*n_vocab*sizeof(float));
             }
-        }
 
-        // extract timhack_extracted_layer_output 
-        if (timhack_extracted_layer_output) {
-            ggml_backend_t backend_th = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), res);
-            GGML_ASSERT(backend_th != nullptr);
-            GGML_ASSERT(lctx.timhack_extracted_layer_output != nullptr);
+            // extract timhack_extracted_layer_output 
+            if (timhack_extracted_layer_output) {
+                ggml_backend_t backend_th = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), res);
+                GGML_ASSERT(backend_th != nullptr);
+                GGML_ASSERT(lctx.timhack_extracted_layer_output != nullptr);
 
-            //TODO 4 we're going to ignore batches for now (which means not pay attention to n_outputs_prev)
-            //because we're really only interested in a single token right now. So we just copy over
-            //and over again the same place
-            float * th_out = lctx.timhack_extracted_layer_output;
-            const int32_t n_outputs_new = lctx.n_outputs;
+                //TODO 4 we're going to ignore batches for now (which means not pay attention to n_outputs_prev)
+                //because we're really only interested in a single token right now. So we just copy over
+                //and over again the same place
+                float * th_out = lctx.timhack_extracted_layer_output;
+                const int32_t n_outputs_new = lctx.n_outputs;
 
-            const int32_t n_ctx = llama_n_ctx(&lctx);
+                const int32_t n_ctx = llama_n_ctx(&lctx);
 
-            if (n_outputs_new) {
-                GGML_ASSERT( n_outputs_new <= n_outputs);
-                GGML_ASSERT( n_outputs_new * n_ctx <= (int64_t) lctx.timhack_extracted_layer_output_size);
-                GGML_ASSERT( ggml_nelements(timhack_extracted_layer_output) >= n_outputs_new * n_ctx);
-                ggml_backend_tensor_get_async(backend_th, timhack_extracted_layer_output, th_out, 0, n_outputs_new*n_ctx*sizeof(float));
+                GGML_ASSERT( ggml_nelements(timhack_extracted_layer_output) == n_embd);
+                ggml_backend_tensor_get_async(backend_th, timhack_extracted_layer_output, th_out, 0, n_embd*sizeof(float));
             }
-        }
+        } // if res
 
         // extract embeddings
         if (embd) {

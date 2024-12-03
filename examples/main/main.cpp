@@ -17,6 +17,7 @@
 #include <faiss/IndexFlat.h>
 #include <faiss/IndexIVFPQ.h>
 #include <faiss/index_io.h>
+#include <fstream> 
 
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
 #include <signal.h>
@@ -459,6 +460,9 @@ int main(int argc, char ** argv) {
     bool display              = true;
     bool need_to_save_session = !path_session.empty() && n_matching_session_tokens < embd_inp.size();
 
+    //if true, the current context is stored to long term memory (a log file, basically, that will be later read into the vector db)
+    bool timhack_to_store_context_to_ltm = false;
+
     int n_past             = 0;
     int n_remain           = params.n_predict;
     int n_consumed         = 0;
@@ -618,9 +622,24 @@ int main(int argc, char ** argv) {
 
                 LOG_DBG("eval: %s\n", string_from(ctx, embd).c_str());
 
-                if (llama_decode(ctx, llama_batch_get_one(&embd[i], n_eval))) {
-                    LOG_ERR("%s : failed to eval\n", __func__);
-                    return 1;
+                if(timhack_to_store_context_to_ltm) {
+                   GGML_ASSERT(llama_n_layer(model) > 2);
+
+                    if (llama_decode_extract(ctx, llama_batch_get_one(&embd[i], n_eval),llama_n_layer(model) - 2)) { 
+                        LOG_ERR("%s : failed to eval\n", __func__);
+                        return 1;
+                    }
+
+                    LOG_INF("done decode_extract\n");
+                    timhack_to_store_context_to_ltm = false;
+
+
+                }
+                else {
+                    if (llama_decode(ctx, llama_batch_get_one(&embd[i], n_eval))) {
+                        LOG_ERR("%s : failed to eval\n", __func__);
+                        return 1;
+                    }
                 }
 
                 timhack_current_context_window.insert(
@@ -763,21 +782,6 @@ int main(int argc, char ** argv) {
             if (llama_token_is_eog(model, common_sampler_last(smpl))) {
                 LOG_DBG("found an EOG token\n");
 
-                if(embd.size() > 0) {
-                    GGML_ASSERT(llama_n_layer(model) > 2);
-
-                    if (llama_decode_extract(ctx, llama_batch_get_one(&embd[embd.size()-1], 1),llama_n_layer(model) - 2)) { 
-                        LOG_ERR("%s : failed to eval\n", __func__);
-                        return 1;
-                    }
-
-                    LOG_INF("done decode_extract\n");
-
-                    //TODO 3: It might be better to record the history at the end of the user input. Then the model is in the same
-                    //state that it would be in when it wants to create a response and know the context
-                }
-
-
                 if (params.interactive) {
                     if (!params.antiprompt.empty()) {
                         // tokenize and inject first reverse prompt
@@ -832,6 +836,9 @@ int main(int argc, char ** argv) {
                 // done taking input, reset color
                 console::set_display(console::reset);
                 display = true;
+
+                //TODO 4, we may want to store context every so often rather than at the end of the user prompt? Don't know
+                timhack_to_store_context_to_ltm = true;
 
                 // Add tokens to embd only if the input buffer is non-empty
                 // Entering a empty line lets the user pass control back

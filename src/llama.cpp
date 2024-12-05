@@ -17183,7 +17183,7 @@ static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs, bool 
 
     const size_t logits_size = has_logits ? n_vocab*n_outputs_max : 0;
     const size_t embd_size   = has_embd   ?  n_embd*n_outputs_max : 0;
-    const size_t timhack_extracted_upper_layer_size = is_timhack_extract_layer_output ? n_embd : 0;
+    const size_t timhack_extracted_layer_size = is_timhack_extract_layer_output ? n_embd : 0;
 
     if (lctx.output_ids.empty()) {
         // init, never resized afterwards
@@ -17191,7 +17191,7 @@ static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs, bool 
     }
 
     const size_t prev_size = lctx.buf_output ? ggml_backend_buffer_get_size(lctx.buf_output.get()) : 0;
-    const size_t new_size  = (logits_size + embd_size + timhack_extracted_upper_layer_size) * sizeof(float);
+    const size_t new_size  = (logits_size + embd_size + timhack_extracted_layer_size) * sizeof(float);
 
     // alloc only when more than the current capacity is required
     // TODO: also consider shrinking the buffer
@@ -17225,12 +17225,12 @@ static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs, bool 
 
     lctx.logits = has_logits ? output_base               : nullptr;
     lctx.embd   = has_embd   ? output_base + logits_size : nullptr;
-    lctx.timhack_extracted_layer_output = is_timhack_extract_layer_output ? output_base + logits_size + timhack_extracted_upper_layer_size : nullptr;
+    lctx.timhack_extracted_layer_output = is_timhack_extract_layer_output ? output_base + logits_size + timhack_extracted_layer_size : nullptr;
 
     lctx.output_size = n_outputs_max;
     lctx.logits_size = logits_size;
     lctx.embd_size   = embd_size;
-    lctx.timhack_extracted_layer_output_size   = timhack_extracted_upper_layer_size;
+    lctx.timhack_extracted_layer_output_size   = timhack_extracted_layer_size;
 
     // set all ids as invalid (negative)
     std::fill(lctx.output_ids.begin(), lctx.output_ids.end(), -1);
@@ -17321,7 +17321,7 @@ static enum ggml_status llama_graph_compute(
 static int llama_decode_internal(
          llama_context & lctx,
            llama_batch   inp_batch,
-               int32_t   timhack_extract_layer_output) {
+               int32_t   timhack_extract_layer_index) {
 
     lctx.is_encoding = false;
 
@@ -17392,7 +17392,7 @@ static int llama_decode_internal(
         /* logits_all   */ n_outputs == n_tokens_all);
 
     // reserve output buffer
-    if (llama_output_reserve(lctx, n_outputs,timhack_extract_layer_output >= 0) < n_outputs) {
+    if (llama_output_reserve(lctx, n_outputs,timhack_extract_layer_index >= 0) < n_outputs) {
         LLAMA_LOG_ERROR("%s: could not reserve space for batch with %u outputs\n", __func__, n_outputs);
         return -2;
     };
@@ -17466,15 +17466,13 @@ static int llama_decode_internal(
         ggml_backend_sched_reset(lctx.sched.get());
         ggml_backend_sched_set_eval_callback(lctx.sched.get(), lctx.cparams.cb_eval, lctx.cparams.cb_eval_user_data);
 
-        ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false, timhack_extract_layer_output);
+        ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false, timhack_extract_layer_index);
 
-        //TODO 1 we got to only extract the entry from the batch
-        // the output is always the last tensor in the graph
         struct ggml_tensor * res;
         struct ggml_tensor * embd;
         struct ggml_tensor * timhack_extracted_layer_output;
         
-        if (timhack_extract_layer_output >=0 && timhack_extract_layer_output < llama_n_layer(&lctx.model))
+        if (timhack_extract_layer_index >=0 && timhack_extract_layer_index < llama_n_layer(&lctx.model))
         {
             res = ggml_graph_node(gf, -1);
             embd = ggml_graph_node(gf, -2);
@@ -21402,12 +21400,13 @@ int32_t llama_encode(
     return ret;
 }
 
-
+// Like llama_decode, but extracts an output layer
 int32_t llama_decode_extract(
-        struct llama_context * ctx,
-          struct llama_batch   batch,
-                     int32_t   timhack_extract_layer_output) {
-    const int ret = llama_decode_internal(*ctx, batch, timhack_extract_layer_output);
+                    struct llama_context * ctx,
+                      struct llama_batch   batch,
+                                 int32_t   timhack_extract_layer_index
+                                   ) {
+    const int ret = llama_decode_internal(*ctx, batch, timhack_extract_layer_index);
     if (ret != 0) {
         LLAMA_LOG_ERROR("%s: failed to decode, ret = %d\n", __func__, ret);
     }
@@ -21467,6 +21466,11 @@ float * llama_get_logits(struct llama_context * ctx) {
     return ctx->logits;
 }
 
+float * llama_timhack_get_extracted_layer(struct llama_context * ctx) {
+    llama_synchronize(ctx);
+
+    return ctx->timhack_extracted_layer_output;
+}
 float * llama_get_logits_ith(struct llama_context * ctx, int32_t i) {
     int32_t j = -1;
     llama_synchronize(ctx);

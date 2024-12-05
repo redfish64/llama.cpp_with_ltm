@@ -23,6 +23,7 @@ add_library(llama
             llama-vocab.cpp
             llama-grammar.cpp
             llama-sampling.cpp
+            llama-ltm.cpp
             up_ltm.cpp
             unicode.h
             unicode.cpp

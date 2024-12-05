@@ -154,3 +154,36 @@ kv_cache
 the current model has 4096 dimensions in the embedding layer.
 There are 32 heads but each head only handles part of the embedding layer.
 So the output of the layer should equal the number of embedding dimensions, regardless of context size.
+
+
+*** llama_decode_internal
+writes to lctx.logits, lctx.embd, lctx.timhack_extracted_layer_output
+
+main uses batch to get the embd. So somewhere llama_decode_internal must be updating the batch
+embd_out = lctx.embd + pointer math
+then it writes to embd_out
+
+but somehow the batch.embd is getting written to, I just don't know how. Because main calls:
+if (llama_decode(ctx, llama_batch_get_one(&embd[i], n_eval))) ...
+and
+std::vector<llama_token> embd;
+is defined in main
+I still can't figure it out. 
+So it's hard to know where the proper place to put the extracted layer
+
+I found this:
+float * llama_get_logits(struct llama_context * ctx) {
+    llama_synchronize(ctx);
+
+    // reorder logits for backward compatibility
+    // TODO: maybe deprecate this
+    llama_output_reorder(ctx);
+
+    return ctx->logits;
+}
+
+so I just made the same function for the extracted layer. 
+
+I am confused about embd. It seems to be equivalent to tokens, but then why do the upper layer we are extracting from
+have a length of n_embd? Probably because its only outputting one token.
+

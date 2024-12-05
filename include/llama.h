@@ -814,7 +814,8 @@ extern "C" {
     LLAMA_API int32_t llama_decode_extract(
                     struct llama_context * ctx,
                       struct llama_batch   batch,
-                                 int32_t   timhack_extract_layer_output);
+                                 int32_t   timhack_extract_layer_index
+                                   );
 
     // Set the number of threads used for decoding
     // n_threads is the number of threads used for generation (single token)
@@ -849,6 +850,9 @@ extern "C" {
     // Rows: number of tokens for which llama_batch.logits[i] != 0
     // Cols: n_vocab
     LLAMA_API float * llama_get_logits(struct llama_context * ctx);
+
+    // Len: n_embd
+    LLAMA_API float * llama_timhack_get_extracted_layer(struct llama_context * ctx);
 
     // Logits for the ith token. For positive indices, Equivalent to:
     // llama_get_logits(ctx) + ctx->output_ids[i]*n_vocab

@@ -629,8 +629,9 @@ int main(int argc, char ** argv) {
 
                     float extracted_elems [llama_n_embd(model)];
 
-                    if (llama_decode_extract(ctx, llama_batch_get_one(&embd[i], n_eval),llama_n_layer(model) - params.timhack_layer_to_extract),
-                                             extracted_elems) { 
+                    if (llama_decode_extract(ctx, llama_batch_get_one(&embd[i], n_eval),
+                                             llama_n_layer(model) - params.timhack_layer_to_extract))
+                    { 
                         LOG_ERR("%s : failed to eval\n", __func__);
                         return 1;
                     }

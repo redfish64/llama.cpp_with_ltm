@@ -1,5 +1,5 @@
 #include "llama-ltm.h"
-#include "log.h"
+#include "llama-impl.h"
 #include "llama.h"
 
 
@@ -36,14 +36,14 @@ struct timhack_ltm_store_entry {
     const char * data; // text output being stored
 };
 
-#define WRITE_DATA(fs, mem) {fs.write(reinterpret_cast<const char*>(mem), sizeof(mem));}
-#define WRITE_DATA_LEN(fs, mem, len) {fs.write(reinterpret_cast<const char*>(mem), len);}
+#define WRITE_DATA(fs, mem) {fs.write(reinterpret_cast<const char*>(&mem), sizeof(mem));}
+#define WRITE_DATA_PTR(fs, mem, len) {fs.write(reinterpret_cast<const char*>(mem), len);}
 
 static int timhack_write_ltm_header(std::ofstream &outputFile, timhack_ltm_file_header &h) {
     //TODO 2 handle write errors
     WRITE_DATA(outputFile,h.magic)
     WRITE_DATA(outputFile,h.version)
-    WRITE_DATA_LEN(outputFile,h.model,sizeof(char) * strlen(h.model))
+    WRITE_DATA_PTR(outputFile,&h.model,sizeof(char) * (1+strlen(h.model))) //+1 for null char at end
 
     return 0;
 }
@@ -55,8 +55,8 @@ static int timhack_write_ltm_entry(std::ofstream &outputFile, timhack_ltm_store_
     WRITE_DATA(outputFile,se.n_index)
     WRITE_DATA(outputFile,se.n_data)
     WRITE_DATA(outputFile,se.date_ts)
-    WRITE_DATA_LEN(outputFile,se.index,sizeof(float) * se.n_index)
-    WRITE_DATA_LEN(outputFile,se.data,sizeof(char) * se.n_data)
+    WRITE_DATA_PTR(outputFile,se.index,sizeof(float) * se.n_index)
+    WRITE_DATA_PTR(outputFile,se.data,sizeof(char) * se.n_data)
 
     return 0;
 }
@@ -82,7 +82,7 @@ void timhack_write_ltm_layer_data(std::string data_dir, llama_model *model, std:
     std::ofstream outputFile(filename, std::ios::binary);
 
     if (!outputFile.is_open()) {
-        LOG_ERR("unable to open ltm data file for writing: %s\n",filename);
+        LLAMA_LOG_ERROR("unable to open ltm data file for writing: %s\n",filename);
         return;
     }
 

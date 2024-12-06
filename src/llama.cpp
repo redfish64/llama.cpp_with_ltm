@@ -17167,7 +17167,7 @@ static void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) 
 
 // Make sure enough space is available for outputs.
 // Returns max number of outputs for which space was reserved.
-static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs, int timhack_from_layer_extract_data) {
+static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs, bool is_timhack_extract_layer_output) {
     const auto & cparams = lctx.cparams;
     const auto & hparams = lctx.model.hparams;
 
@@ -17183,12 +17183,7 @@ static size_t llama_output_reserve(llama_context & lctx, size_t n_outputs, int t
 
     const size_t logits_size = has_logits ? n_vocab*n_outputs_max : 0;
     const size_t embd_size   = has_embd   ?  n_embd*n_outputs_max : 0;
-
-    const int num_layers = llama_n_layer(&lctx.model);
-
-    const size_t timhack_extracted_layer_size = timhack_from_layer_extract_data >= 0 
-        ? (num_layers - timhack_from_layer_extract_data) * n_embd : 0;
-
+    const size_t timhack_extracted_layer_size = is_timhack_extract_layer_output ? n_embd : 0;
 
     if (lctx.output_ids.empty()) {
         // init, never resized afterwards
@@ -17326,7 +17321,7 @@ static enum ggml_status llama_graph_compute(
 static int llama_decode_internal(
          llama_context & lctx,
            llama_batch   inp_batch,
-               int32_t   timhack_from_extract_layer_index) {
+               int32_t   timhack_extract_layer_index) {
 
     lctx.is_encoding = false;
 
@@ -17397,7 +17392,7 @@ static int llama_decode_internal(
         /* logits_all   */ n_outputs == n_tokens_all);
 
     // reserve output buffer
-    if (llama_output_reserve(lctx, n_outputs,timhack_from_extract_layer_index) < n_outputs) {
+    if (llama_output_reserve(lctx, n_outputs,timhack_extract_layer_index >= 0) < n_outputs) {
         LLAMA_LOG_ERROR("%s: could not reserve space for batch with %u outputs\n", __func__, n_outputs);
         return -2;
     };
@@ -21409,9 +21404,9 @@ int32_t llama_encode(
 int32_t llama_decode_extract(
                     struct llama_context * ctx,
                       struct llama_batch   batch,
-                                 int32_t   from_timhack_extract_layer_index //layers at this layer or layer will be extracted
+                                 int32_t   timhack_extract_layer_index
                                    ) {
-    const int ret = llama_decode_internal(*ctx, batch, from_timhack_extract_layer_index);
+    const int ret = llama_decode_internal(*ctx, batch, timhack_extract_layer_index);
     if (ret != 0) {
         LLAMA_LOG_ERROR("%s: failed to decode, ret = %d\n", __func__, ret);
     }

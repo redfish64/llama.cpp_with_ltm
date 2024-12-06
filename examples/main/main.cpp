@@ -629,24 +629,38 @@ int main(int argc, char ** argv) {
 
                     float extracted_elems [llama_n_embd(model)];
 
+                    int actual_layer = llama_n_layer(model) - params.timhack_layer_to_extract;
+
                     if (llama_decode_extract(ctx, llama_batch_get_one(&embd[i], n_eval),
-                                             llama_n_layer(model) - params.timhack_layer_to_extract))
+                                             actual_layer))
                     { 
                         LOG_ERR("%s : failed to eval\n", __func__);
                         return 1;
                     }
 
-                    LOG_INF("done decode_extract\n");
+                    LOG_DBG("done decode_extract\n");
                     timhack_to_store_context_to_ltm = false;
+
+                    ltm_entry_layer el = {
+                        actual_layer,
+                        llama_n_embd(model),
+                        llama_timhack_get_extracted_layer(ctx)
+                        //     const u_int16_t layer_index; // index of layer within LLM
+                    //     const u_int16_t n_layer; // size of layer
+                    //     const float * layer; //the elements within the layer
+                    };
+
+                    std::vector<ltm_entry_layer> v_el;
+                    v_el.push_back(el); 
+
 
                     // void timhack_write_ltm_layer_data(std::string data_dir, 
                     //                                   llama_model *model, std::vector<llama_token> current_context_window, 
                     //                                   int extracted_layer_index,
                     //                                   int index_len, float *index_data);
-                    timhack_write_ltm_layer_data(params.timhack_data_dir,model,timhack_current_context_window, 
-                                                 params.timhack_layer_to_extract,
-                                                 llama_n_embd(model),
-                                                 llama_timhack_get_extracted_layer(ctx));
+                    write_ltm_layer_data(params.timhack_data_dir,model,timhack_current_context_window, 
+                                                 v_el
+                                                 );
                 }
                 else {
                     if (llama_decode(ctx, llama_batch_get_one(&embd[i], n_eval))) {

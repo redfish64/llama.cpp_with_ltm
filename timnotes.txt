@@ -187,3 +187,5 @@ so I just made the same function for the extracted layer.
 I am confused about embd. It seems to be equivalent to tokens, but then why do the upper layer we are extracting from
 have a length of n_embd? Probably because its only outputting one token.
 
+*** bug
+The data isn't including the latest user input?? It should, shouldn't it?

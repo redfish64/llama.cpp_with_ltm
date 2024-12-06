@@ -19,27 +19,29 @@ const std::string kPathSeparator =
                             "/";
 #endif
 
-struct timhack_ltm_file_header 
+struct ltm_file_header 
 {
     const int magic;
     const int version;
     const char * model;
 };
 
-struct timhack_ltm_store_entry {
+
+struct ltm_store_entry {
     const int64_t date_ts;
-    const u_int16_t layer_index; // indexed from the last layer backwards. So if there are 32 layers and this is 2 then it would be layer 30
-    const u_int16_t n_index; //number of elements in index
+    const u_int16_t n_layers; //total number of elements in index (n_index/layer_size == number of layers saved)
+
+    const ltm_entry_layer *layers;
+
+    //PERF we could possibly store tokens for data, but I really want to be able to run strings on the bin files and get a good result
     const u_int16_t n_data; //number of elements in data
-    const float * index; //the elements within the layer
-    //PERF we could possibly store tokens, but I really want to be able to run strings on the bin files and get a good result
     const char * data; // text output being stored
 };
 
 #define WRITE_DATA(fs, mem) {fs.write(reinterpret_cast<const char*>(&mem), sizeof(mem));}
 #define WRITE_DATA_PTR(fs, mem, len) {fs.write(reinterpret_cast<const char*>(mem), len);}
 
-static int timhack_write_ltm_header(std::ofstream &outputFile, timhack_ltm_file_header &h) {
+static int write_ltm_header(std::ofstream &outputFile, ltm_file_header &h) {
     //TODO 2 handle write errors
     WRITE_DATA(outputFile,h.magic)
     WRITE_DATA(outputFile,h.version)
@@ -48,25 +50,27 @@ static int timhack_write_ltm_header(std::ofstream &outputFile, timhack_ltm_file_
     return 0;
 }
 
-static int timhack_write_ltm_entry(std::ofstream &outputFile, timhack_ltm_store_entry &se) {
+static int write_ltm_entry(std::ofstream &outputFile, ltm_store_entry &se) {
     //TODO 2 handle write errors
     WRITE_DATA(outputFile,se.date_ts)
-    WRITE_DATA(outputFile,se.layer_index)
-    WRITE_DATA(outputFile,se.n_index)
+    WRITE_DATA(outputFile,se.n_layers)
+    for(int i = 0; i < se.n_layers; i++) {
+        const ltm_entry_layer *el = &se.layers[i];
+        WRITE_DATA(outputFile,el->layer_index)
+        WRITE_DATA(outputFile,el->n_layer)
+        WRITE_DATA_PTR(outputFile,el->layer,sizeof(float) * el->n_layer)
+    }
     WRITE_DATA(outputFile,se.n_data)
-    WRITE_DATA(outputFile,se.date_ts)
-    WRITE_DATA_PTR(outputFile,se.index,sizeof(float) * se.n_index)
     WRITE_DATA_PTR(outputFile,se.data,sizeof(char) * se.n_data)
 
     return 0;
 }
 
-#define TIMHACK_MAGIC 0x5f469a77
-#define TIMHACK_LTM_VERSION 1
+#define LTM_MAGIC 0x5f469a77
+#define LTM_VERSION 1
 
-void timhack_write_ltm_layer_data(std::string data_dir, llama_model *model, std::vector<llama_token> current_context_window, 
-                                         int extracted_layer_index,
-                                         int index_len, float *index_data)
+void write_ltm_layer_data(std::string data_dir, llama_model *model, std::vector<llama_token> current_context_window, 
+                                         std::vector<ltm_entry_layer> layers)
 {
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::time_t now_t = std::chrono::system_clock::to_time_t(now);
@@ -89,10 +93,10 @@ void timhack_write_ltm_layer_data(std::string data_dir, llama_model *model, std:
     char model_desc[40];
     llama_model_desc(model,model_desc,40);
 
-    timhack_ltm_file_header fh =
+    ltm_file_header fh =
         {
-            TIMHACK_MAGIC,
-            TIMHACK_LTM_VERSION,
+            LTM_MAGIC,
+            LTM_VERSION,
             model_desc
         };
 
@@ -118,18 +122,17 @@ void timhack_write_ltm_layer_data(std::string data_dir, llama_model *model, std:
                                         true);
 
 
-    timhack_ltm_store_entry se = 
+    ltm_store_entry se = 
     { 
-        static_cast<uint64_t>(now_t),    // const int64_t date_ts;
-        extracted_layer_index, // const u_int16_t layer_index; // indexed from the last layer backwards. So if there are 32 layers and this is 2 then it would be layer 30
-        index_len, // const u_int16_t n_index; //number of elements in index
+        static_cast<uint64_t>(now_t), //     const int64_t date_ts;
+        layers.size(),//     const u_int16_t n_layers; //total number of elements in index (n_index/layer_size == number of layers saved)
+        layers.data(),//     const ltm_entry_layer *layers;
         text_len, // const u_int16_t n_data; //number of elements in data
-        index_data, // const float * layer;
-        text// const char * data; //PERF we could possibly store tokens, but I really want to be able to run strings on the log files and get a good result
+        text//     const char * data; // text output being stored
     };
 
-    timhack_write_ltm_header(outputFile,fh);
-    timhack_write_ltm_entry(outputFile,se);
+    write_ltm_header(outputFile,fh);
+    write_ltm_entry(outputFile,se);
 
     outputFile.close();
 

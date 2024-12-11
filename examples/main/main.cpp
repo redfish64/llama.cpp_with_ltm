@@ -622,6 +622,13 @@ int main(int argc, char ** argv) {
                     n_eval = params.n_batch;
                 }
 
+
+                timhack_current_context_window.insert(
+                    timhack_current_context_window.end(),
+                    embd.begin() + i,
+                    embd.begin() + i + n_eval
+                );
+
                 LOG_DBG("eval: %s\n", string_from(ctx, embd).c_str());
 
                 if(timhack_to_store_context_to_ltm && params.timhack_layer_to_extract > 0) {
@@ -669,12 +676,6 @@ int main(int argc, char ** argv) {
                     }
                 }
 
-                timhack_current_context_window.insert(
-                    timhack_current_context_window.end(),
-                    embd.begin() + i,
-                    embd.begin() + i + n_eval
-                );
-
                 n_past += n_eval;
 
                 GGML_ASSERT(timhack_current_context_window.size() == n_past && "context window size mismatch");
@@ -721,8 +722,14 @@ int main(int argc, char ** argv) {
         } else {
             // some user input remains from prompt or interaction, forward it to processing
             LOG_DBG("embd_inp.size(): %d, n_consumed: %d\n", (int) embd_inp.size(), n_consumed);
+
+            //after we process the user prompt, we store the context for vectordb
+            if ((int) embd_inp.size() > n_consumed && n_past != 0)
+                timhack_to_store_context_to_ltm = true;
+
             while ((int) embd_inp.size() > n_consumed) {
                 embd.push_back(embd_inp[n_consumed]);
+
 
                 // push the prompt in the sampling context in order to apply repetition penalties later
                 // for the prompt, we don't apply grammar rules
@@ -863,9 +870,6 @@ int main(int argc, char ** argv) {
                 // done taking input, reset color
                 console::set_display(console::reset);
                 display = true;
-
-                //TODO 4, we may want to store context every so often rather than at the end of the user prompt? Don't know
-                timhack_to_store_context_to_ltm = true;
 
                 // Add tokens to embd only if the input buffer is non-empty
                 // Entering a empty line lets the user pass control back

@@ -1433,6 +1433,19 @@ llama-tokenize/fast:
 .PHONY : llama-tokenize/fast
 
 #=============================================================================
+# Target rules for targets named llama-vectordb
+
+# Build rule for target.
+llama-vectordb: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 llama-vectordb
+.PHONY : llama-vectordb
+
+# fast build rule for target.
+llama-vectordb/fast:
+	$(MAKE) $(MAKESILENT) -f examples/vectordb/CMakeFiles/llama-vectordb.dir/build.make examples/vectordb/CMakeFiles/llama-vectordb.dir/build
+.PHONY : llama-vectordb/fast
+
+#=============================================================================
 # Target rules for targets named llama-vdot
 
 # Build rule for target.
@@ -1544,6 +1557,7 @@ help:
 	@echo "... llama-speculative"
 	@echo "... llama-tokenize"
 	@echo "... llama-vdot"
+	@echo "... llama-vectordb"
 	@echo "... llava"
 	@echo "... llava_shared"
 	@echo "... llava_static"

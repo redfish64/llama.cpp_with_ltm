@@ -46,8 +46,10 @@ int main(int argc, char ** argv) {
             return 1;
         }
     }
+    faiss::IndexFlatL2 index(64);           // call constructor
+    printf("is_trained = %s\n", index.is_trained ? "true" : "false");
 
-     // Vector to store the read data
+    // Vector to store the read data
     std::vector<std::pair<ltm_file_header *, ltm_store_entry *>> ltm_data;
 
     // Iterate over all .bin files in the data directory

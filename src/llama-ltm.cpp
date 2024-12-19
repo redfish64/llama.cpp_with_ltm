@@ -59,8 +59,8 @@ std::pair<ltm_file_header *, ltm_store_entry *> read_ltm_file(const std::string&
         throw std::runtime_error("Unable to open file for reading: " + filename);
     }
 
-    ltm_file_header *header;
-    ltm_store_entry *store_entry;
+    ltm_file_header *header = NULL;
+    ltm_store_entry *store_entry = NULL;
 
     try {
         //file_header
@@ -144,7 +144,7 @@ static int write_ltm_header(std::ofstream &outputFile, ltm_file_header &h) {
     //TODO 2 handle write errors
     WRITE_DATA(outputFile,h.magic)
     WRITE_DATA(outputFile,h.version)
-    WRITE_DATA_PTR(outputFile,&h.model_name,sizeof(char) * (1+strlen(h.model_name))) //+1 for null char at end
+    WRITE_DATA_PTR(outputFile,h.model_name,sizeof(char) * (1+strlen(h.model_name))) //+1 for null char at end
 
     return 0;
 }

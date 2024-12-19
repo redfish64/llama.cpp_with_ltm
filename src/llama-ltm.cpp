@@ -104,9 +104,9 @@ std::pair<ltm_file_header *, ltm_store_entry *> read_ltm_file(const std::string&
                     READ_DATA(inputFile, e->n_layer)
                     if(e->n_layer > MAX_LAYER_SIZE)
                         throw std::runtime_error("Layer size too big: " + e->n_layer);
-                    e->layer = new float[e->n_layer];
+                    e->f_layer_data = new float[e->n_layer];
 
-                    READ_DATA_PTR(inputFile, e->layer, e->n_layer)
+                    READ_DATA_PTR(inputFile, e->f_layer_data, e->n_layer)
                 }
             }
 
@@ -157,7 +157,7 @@ static int write_ltm_entry(std::ofstream &outputFile, ltm_store_entry &se) {
         const ltm_entry_layer *el = &se.layers[i];
         WRITE_DATA(outputFile,el->layer_index)
         WRITE_DATA(outputFile,el->n_layer)
-        WRITE_DATA_PTR(outputFile,el->layer,sizeof(float) * el->n_layer)
+        WRITE_DATA_PTR(outputFile,el->f_layer_data,sizeof(float) * el->n_layer)
     }
     WRITE_DATA(outputFile,se.n_data)
     WRITE_DATA_PTR(outputFile,se.data,sizeof(char) * se.n_data)
@@ -192,12 +192,7 @@ void write_ltm_layer_data(std::string data_dir, llama_model *model, std::vector<
     char model_desc[40];
     llama_model_desc(model,model_desc,40);
 
-    ltm_file_header fh =
-        {
-            LTM_MAGIC,
-            LTM_VERSION,
-            model_desc
-        };
+    ltm_file_header fh(LTM_MAGIC, LTM_VERSION, model_desc);
 
     //TODO 3, what should we do here, keep allocating more until we can hold it?
     int text_max_len = current_context_window.size() * 20; //20x should be more than enough
@@ -221,14 +216,13 @@ void write_ltm_layer_data(std::string data_dir, llama_model *model, std::vector<
                                         true);
 
 
-    ltm_store_entry se = 
-    { 
+    ltm_store_entry se(
         static_cast<uint64_t>(now_t), //     const int64_t date_ts;
         layers.size(),//     const u_int16_t n_layers; //total number of elements in index (n_index/layer_size == number of layers saved)
         layers.data(),//     const ltm_entry_layer *layers;
         text_len, // const u_int16_t n_data; //number of elements in data
         text//     const char * data; // text output being stored
-    };
+    );
 
     write_ltm_header(outputFile,fh);
     write_ltm_entry(outputFile,se);

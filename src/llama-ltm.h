@@ -9,21 +9,21 @@
 struct ltm_entry_layer {
     u_int16_t layer_index; // index of layer within LLM
     u_int16_t n_layer; // size of layer
-    float * layer; //the elements within the layer
+    float * f_layer_data; //the elements within the layer
 
-    ltm_entry_layer() : layer_index(0), n_layer(0), layer(NULL)
+    ltm_entry_layer() : layer_index(0), n_layer(0), f_layer_data(NULL)
     {
     }
 
     ltm_entry_layer(u_int16_t layer_index, u_int16_t n_layer, const float* layer_in) 
         : layer_index(layer_index), n_layer(n_layer) 
     {
-        layer = new float[n_layer];
-        std::memcpy(layer, layer_in, sizeof(float) * n_layer);
+        f_layer_data = new float[n_layer];
+        std::memcpy(f_layer_data, layer_in, sizeof(float) * n_layer);
     }
 
     ~ltm_entry_layer() {
-        delete[] layer;
+        delete[] f_layer_data;
     }
 };
 
@@ -66,8 +66,8 @@ struct ltm_store_entry {
         for (int i = 0; i < n_layers; ++i) {
             layers[i].layer_index = layers_in[i].layer_index;
             layers[i].n_layer = layers_in[i].n_layer;
-            layers[i].layer = new float[layers_in[i].n_layer];
-            std::memcpy(layers[i].layer, layers_in[i].layer, sizeof(float) * layers_in[i].n_layer);
+            layers[i].f_layer_data = new float[layers_in[i].n_layer];
+            std::memcpy(layers[i].f_layer_data, layers_in[i].f_layer_data, sizeof(float) * layers_in[i].n_layer);
         }
 
         // Allocate memory for data
